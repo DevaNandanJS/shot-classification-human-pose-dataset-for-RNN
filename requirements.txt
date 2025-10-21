@@ -1,0 +1,6 @@
+pandas
+opencv-python
+tensorflow
+numpy
+imageio
+ultralytics
