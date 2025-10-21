@@ -1,0 +1,5 @@
+# Ignore the data folder
+input/
+
+# Ignore the Python virtual environment folder
+.venv/
