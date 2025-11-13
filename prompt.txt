@@ -1,100 +1,65 @@
-Project Report: A Comparative Study of Foundation Models for Prognostic Modeling in Computational Pathology using the CLAM Framework 
+You are an expert AI Lead Engineer. I need to refactor the attached `features_pose_centric.py` script to implement our new, optimized "13-Feature Master Set" architecture.
 
-Date: October 18, 2025 
+**The Goal:**
+for C:\RNN dataset creation\RNN\features_pose_centric.py We are creating a new dataset for a 7-class classifier (e.g., `r_serve`, `l_serve`, `r_forehand`, `l_forehand`, etc.). To do this, we need a single feature vector that is "handedness-agnostic" but still contains all the high-level biomechanical data.
 
-1. Project Overview and Objective 
+**The Logic (The 13-Feature "Master" Set):**
+Instead of calculating 9 features for the right and 9 for the left (18 total), we will create a more efficient 13-feature set. The logic is:
+1.  **Shared Features (3):** Calculate side-agnostic features (like `vertical_hip_velocity`, `lateral_trunk_flexion_angle`, `transverse_rotation_proxy`) *once*.
+2.  **Right-Side Features (5):** Calculate all arm/leg-specific features for the *right* side (knee angle, shoulder abduction, elbow angle, wrist_y, forearm path).
+3.  **Left-Side Features (5):** Calculate all arm/leg-specific features for the *left* side.
 
-The objective of this research is to develop and rigorously evaluate an AI-powered prognostic tool for cancer pathology. The system will analyze digitized Whole Slide Images (WSIs) of tumor tissue to predict patient outcomes, such as overall survival or disease recurrence. 
+This `(3 + 5 + 5) = 13` feature vector gives the RNN all information without redundancy.
 
-The project will implement a state-of-the-art, two-stage computational pipeline. This pipeline first uses a large-scale AI model to interpret the visual information on the slide and then uses a second, specialized model to aggregate this information into a clinically relevant prognostic score. The ultimate goal is to provide a more objective, quantitative, and powerful tool to aid pathologists and oncologists in making critical patient treatment decisions. 
+**Execution Plan:**
 
-2. Core Novelty and Thesis Statement 
+Here is the step-by-step plan to refactor `features_pose_centric.py`:
 
-The central novelty of this thesis lies in conducting a rigorous, head-to-head comparative study of modern, domain-specific pathology foundation models within the established CLAM (Clustering-constrained Attention Multiple Instance Learning) framework. 
+1.  **Update Globals:**
+    * Delete the old `columns_9_features` list.
+    * Add a new global list named `COLUMNS_13_FEATURES` that explicitly lists the 13 features in the correct order (3 Shared, 5 Right, 5 Left).
 
-The original CLAM pipeline utilized a ResNet-50 model pre-trained on the general-purpose ImageNet dataset (images of everyday objects). This project will replace that baseline feature extractor with several state-of-the-art foundation models (e.g., UNI, Virchow2, Atlas) that have been pre-trained specifically on millions of histopathology images. 
+2.  **Remove Handedness Flag (Make "Neutral"):**
+    * In the `if __name__ == "__main__":` block, find the `ArgumentParser` and **delete** the `--is_left_handed` argument.
+    * In the `torso_scale_and_normalize` function definition, **remove** the `is_left_handed=False` parameter.
+    * Inside `torso_scale_and_normalize`, **delete** the entire logic block that flips the x-axis for left-handed players. This function must now *only* return a neutral, non-flipped 26-feature vector.
 
-Thesis Statement: This thesis will demonstrate that integrating domain-specific pathology foundation models into the CLAM framework for feature extraction significantly improves prognostic performance for [Selected Cancer Type] compared to the original ImageNet-based baseline, providing an evidence-based recommendation for the optimal model configuration. 
+3.  **Replace Feature Calculator:**
+    * **Delete** the *entire* `calculate_9_biomech_features` function.
+    * **Create a new function** in its place: `def calculate_13_biomech_features(seq_26_features_yx):`
+    * **Inside this new function:**
+        * It must calculate all 13 "master" features in one efficient pass.
+        * Re-use the internal logic from the old function (like `calculate_angle`, vector definitions, etc.).
+        * Calculate the 3 **Shared** features first.
+        * Then, calculate the 5 **Right-Side** specific features (e.g., `right_knee_angle`, `right_elbow_angle`, etc.).
+        * Then, calculate the 5 **Left-Side** specific features (e.g., `left_knee_angle`, `left_elbow_angle`, etc.).
+        * Store them in a `(30, 13)` NumPy array, matching the order of your new `COLUMNS_13_FEATURES` global list.
+        * Return this `(30, 13)` array.
 
-This approach is identified as a "low-risk, high-value" research avenue that directly addresses a timely and unanswered question in the field, making it an impactful contribution. 
+4.  **Update the `main` Loop Logic:**
+    * **Dynamic Counters:** In `main`, delete the static `IDX_FOREHAND`, `IDX_BACKHAND`, etc. counters. Replace them with a single empty dictionary: `shot_counters = {}`.
+    * **Call New Function:** Inside the `if len(sequence_26_features) == NB_IMAGES:` block, replace the call to `calculate_9_biomech_features` with a call to your new function:
+        ```python
+        sequence_array = np.array(sequence_26_features)
+        features_13 = calculate_13_biomech_features(sequence_array)
+        ```
+    * **Update DataFrame:** Create the DataFrame using the new 13-feature data and column list:
+        ```python
+        shots_df = pd.DataFrame(features_13, columns=COLUMNS_13_FEATURES)
+        ```
+    * **Update Saving Logic:** Replace the entire `if/elif` block (for `IDX_FOREHAND`, etc.) with this dynamic logic that uses the `shot_counters` dictionary. This is *critical* for saving our new 7-class labels (e.g., `r_serve`, `l_forehand`):
+        ```python
+        # Dynamic saving logic
+        if shot_class not in shot_counters:
+            shot_counters[shot_class] = 1
+        else:
+            shot_counters[shot_class] += 1
+            
+        idx = shot_counters[shot_class]
+        outpath = Path(args.out).joinpath(f"{shot_class}_{idx:03d}.csv")
+        ```
+    * **Update Print Statement:** Change the final print statement to reflect the new feature count: `print(f"Saving {shot_class} ({NB_IMAGES} frames, 13 features) to {outpath}")`.
+    * **Update `torso_scale_and_normalize` call:** Make sure the call in the `main` loop is updated to remove the `args.is_left_handed` argument.
 
-3. The Two-Stage Pipeline Architecture 
-
-The project will be built around a modular, two-stage pipeline. 
-
-Stage 1: Feature Extraction (The "Expert Eye") This stage converts the raw gigapixel WSI into a set of meaningful numerical representations. 
-
-WSI Pre-processing: Each WSI will be segmented to identify tissue regions, which are then tessellated (patched) into thousands of smaller image tiles. 
-
-Feature Encoding: Each patch will be passed through a "frozen" (non-trainable) feature extractor. This is the core of the experimental comparison. The following models will be evaluated: 
-
-Baseline Model: ResNet-50 (pre-trained on ImageNet), to replicate the original CLAM setup. 
-
-Foundation Models: A selection of modern, publicly available models pre-trained on pathology data (e.g., UNI, Virchow2). 
-
-Output: The result of this stage is a "bag" of high-dimensional feature vectors (embeddings) for each WSI, ready for the next stage. 
-
-Stage 2: Prognostic Modeling (The "Decision Maker") This stage uses the CLAM framework to learn a prognostic model from the extracted feature vectors. 
-
-CLAM Implementation: The CLAM model will be implemented as the aggregation framework. Its unique architecture combines two parallel learning branches: 
-
-Attention-Based Aggregation: An attention network assigns an importance score to each patch, creating a slide-level representation by taking a weighted average of all patch features. 
-
-Instance-Level Clustering: A parallel branch clusters patch embeddings to identify and classify key morphological patterns, constraining the attention mechanism to focus on diagnostically relevant regions. 
-
-Training and Prediction: The model will be trained end-to-end using slide-level labels (e.g., patient survival data) and a smoothing-based loss function. The final output is a single risk score for each patient. 
-
-4. Implementation Roadmap and Key Resources 
-
-This project can be built entirely using publicly available code and resources. 
-
-Primary Repository - mahmoodlab/CLAM: This GitHub repository contains the complete, end-to-end implementation of the CLAM pipeline. It includes scripts for WSI patching, feature extraction, model training, and heatmap visualization. It serves as the foundational codebase for Stage 2. 
-
-License: GPL-3.0. This license permits use and modification for non-commercial academic research. Any distributed derivative work must also be licensed under GPL-3.0. 
-
-Foundation Model Repositories: 
-
-mahmoodlab/UNI: The official repository for the UNI foundation model. It can be easily integrated into the CLAM feature extraction script using the timm library, as recommended in the documentation. 
-
-KatherLab/STAMP: While this is a full pipeline itself, its code can serve as an excellent reference for how to cleanly implement and benchmark various other foundation models. Its license is the more permissive MIT License. 
-
-5. Academic Integrity and Path to Publication 
-
-To ensure the work is a novel contribution suitable for a thesis or paper, the following principles of academic integrity are essential: 
-
-Proper Citation: You must always cite the original papers for CLAM, the foundation models you use, and any other tools or datasets. This practice is fundamental to scholarly work and is often described by the aphorism "standing on the shoulders of giants." 
-
-Clearly Stated Contribution: Your paper's introduction and discussion must explicitly state that you are building upon the CLAM framework. The novelty is not the pipeline itself, but the rigorous benchmarking and analysis of integrating new, domain-specific foundation models into it. 
-
-Focus on Analysis: The core of your paper will be the results and discussion sections, where you present your comparative analysis, interpret the findings, and provide an evidence-based conclusion on which feature extractor performs best for your chosen clinical task. This analysis is your unique and valuable contribution to the scientific community. 
-
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- so im writing a thesis for my masters, i need to have a working prototype within 1 week. my initial idea i will paste in here, i dont think i will be able to properly do it due to device storage and GPU limitations, i use a 1650 gpu on my laptop. so i want you to research on  a topic i can do my thesis on, i want you to give me a topic that will working on something related to cancer prognosis and how we can implement AI into this realm. i cant do WSI as it takes too much resorces especially my gpu. can you find a topic where i can contribute and actually make a decent impact. there should be some contribution and novelty in them
+**Task:**
+Execute this plan and provide the complete, refactored `features_pose_centric.py` file.

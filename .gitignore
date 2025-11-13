@@ -3,3 +3,13 @@ input/
 
 # Ignore the Python virtual environment folder
 .venv/
+__pycache__/
+left-handed/
+right-handed/
+*.mp4
+input/left-handed/f3.mp4
+# .gitignore
+
+# Ignore all large video files in the input folders
+input/left-handed/*.mp4
+input/right-handed/*.mp4
