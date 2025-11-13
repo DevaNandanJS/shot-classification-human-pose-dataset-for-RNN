@@ -306,9 +306,9 @@ def calculate_13_biomech_features(seq_26_features_yx, seq_unnormalized_hip_y):
 if __name__ == "__main__":
     # --- Hardcoded paths for easy execution ---
     # TODO: Manually update these paths before running the script.
-    VIDEO_PATH = r"C:\RNN dataset creation\input\left-handed\f2.mp4"
-    ANNOTATION_PATH = r"C:\RNN dataset creation\annotation\annotation_f2.csv"
-    OUTPUT_PATH = r"C:\RNN dataset creation\dataset-non\f2"
+    VIDEO_PATH = r"C:\RNN dataset creation\input\right-handed\r2.mp4"
+    ANNOTATION_PATH = r"C:\RNN dataset creation\annotation\annotation_r2.csv"
+    OUTPUT_PATH = r"C:\RNN dataset creation\dataset-non\r2"
     
     # Create a mock 'args' object to hold the paths and flags
     from argparse import Namespace
